@@ -29,4 +29,17 @@ describe FPM::Package::CPAN, :if => have_cpanm do
     # the File::Spec module comes from the PathTools CPAN distribution
     insist { subject.name } == "perl-PathTools"
   end
+
+  context "given /tmp as local::lib root" do
+    it "should export local::lib environment relative to /tmp" do
+      tmpdir = "/tmp"
+      subject.send :export_local_lib_env, tmpdir
+      insist { ENV["PATH"] =~ /^#{File.join(tmpdir, "bin")}/ }
+      insist { ENV["PERL5LIB"] = /^#{File.join(tmpdir, "lib", "perl5")}/ }
+      insist { ENV["PERL_LOCAL_LIB_ROOT"] =  /^#{File.join(tmpdir, ".")}/ }
+      insist { ENV["PERL_MB_OPT"] }.nil?
+      insist { ENV["PERL_MM_OPT"] }.nil?
+    end
+  end
+
 end # describe FPM::Package::CPAN

@@ -248,7 +248,7 @@ class FPM::Package::CPAN < FPM::Package
       # This regular expression strips everything from the semicolon in front
       # of 'export' to the end of the line, then splits on the equals sign,
       # limiting the returned array to two elements.
-      (k, v) = line.chomp.gsub(/;\s+export.*$/, '').split("=", 2)
+      (k, v) = line.chomp.gsub(/;\s+export.*$/, "").split("=", 2)
 
       # Skip these, since they wreak havoc when PREFIX # is set.
       next if k == "PERL_MM_OPT" or k == "PERL_MB_OPT"
