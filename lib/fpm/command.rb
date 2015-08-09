@@ -24,7 +24,7 @@ class FPM::Command < Clamp::Command
   include FPM::Util
 
   def help(*args)
-    return [
+    lines = [
       "Intro:",
       "",
       "  This is fpm version #{FPM::VERSION}",
@@ -35,10 +35,14 @@ class FPM::Command < Clamp::Command
       "  You can find support on irc (#fpm on freenode irc) or via email with",
       "  fpm-users@googlegroups.com",
       "",
-
-      # Lastly, include the default help output via Clamp.
-      super
-    ].join("\n")
+      "Loaded package types:",
+    ]
+    FPM::Package.types.each do |name, _|
+      lines.push("  - #{name}")
+    end
+    lines.push("")
+    lines.push(super)
+    return lines.join("\n")
   end # def help
 
   option "-t", "OUTPUT_TYPE",
@@ -139,6 +143,11 @@ class FPM::Command < Clamp::Command
     excludes << val
     next excludes
   end # -x / --exclude
+
+  option "--exclude-file", "EXCLUDE_PATH",
+    "The path to a file containing a newline-sparated list of "\
+    "patterns to exclude from input."
+
   option "--description", "DESCRIPTION", "Add a description for this package." \
     " You can include '\n' sequences to indicate newline breaks.",
     :default => "no description" do |val|
@@ -191,7 +200,7 @@ class FPM::Command < Clamp::Command
   option "--after-upgrade", "FILE",
     "A script to be run after package upgrade. If not specified,\n" \
         "--before-install, --after-install, --before-remove, and \n" \
-        "--after-remove wil behave in a backwards-compatible manner\n" \
+        "--after-remove will behave in a backwards-compatible manner\n" \
         "(they will not be upgrade-case aware).\n" \
         "Currently only supports deb and rpm packages." do |val|
     File.expand_path(val) # Get the full path to the script
@@ -199,7 +208,7 @@ class FPM::Command < Clamp::Command
   option "--before-upgrade", "FILE",
     "A script to be run before package upgrade. If not specified,\n" \
         "--before-install, --after-install, --before-remove, and \n" \
-        "--after-remove wil behave in a backwards-compatible manner\n" \
+        "--after-remove will behave in a backwards-compatible manner\n" \
         "(they will not be upgrade-case aware).\n" \
         "Currently only supports deb and rpm packages." do |val|
     File.expand_path(val) # Get the full path to the script
@@ -215,7 +224,7 @@ class FPM::Command < Clamp::Command
   option "--template-value", "KEY=VALUE",
     "Make 'key' available in script templates, so <%= key %> given will be " \
     "the provided value. Implies --template-scripts",
-    :multivalued => true do |kv| 
+    :multivalued => true do |kv|
     @template_scripts = true
     next kv.split("=", 2)
   end
@@ -272,7 +281,7 @@ class FPM::Command < Clamp::Command
     # fpm would assume you meant to add '.' to the end of the commandline.
     # Let's hack that. https://github.com/jordansissel/fpm/issues/187
     if input_type == "dir" and args.empty? and !chdir.nil?
-      logger.info("No args, but -s dir and -C are given, assuming '.' as input") 
+      logger.info("No args, but -s dir and -C are given, assuming '.' as input")
       args << "."
     end
 
@@ -293,7 +302,7 @@ class FPM::Command < Clamp::Command
 
     input = input_class.new
 
-    # Merge in package settings. 
+    # Merge in package settings.
     # The 'settings' stuff comes in from #apply_options, which goes through
     # all the options defined in known packages and puts them into our command.
     # Flags in packages defined as "--foo-bar" become named "--<packagetype>-foo-bar"
@@ -310,10 +319,10 @@ class FPM::Command < Clamp::Command
         # clamp makes option attributes available as accessor methods
         # --foo-bar is available as 'foo_bar'. Put these in the package
         # attributes hash. (See FPM::Package#attributes)
-        # 
+        #
         # In the case of 'flag' options, the accessor is actually 'foo_bar?'
         # instead of just 'foo_bar'
-       
+
         # If the instance variable @{attr} is defined, then
         # it means the flag was given on the command line.
         flag_given = instance_variable_defined?("@#{attr}")
@@ -328,8 +337,8 @@ class FPM::Command < Clamp::Command
     # For directories, this means paths. For things like gem and python, this
     # means package name or paths to the packages (rails, foo-1.0.gem, django,
     # bar/setup.py, etc)
-    args.each do |arg| 
-      input.input(arg) 
+    args.each do |arg|
+      input.input(arg)
     end
 
     # If --inputs was specified, read it as a file.
@@ -340,9 +349,25 @@ class FPM::Command < Clamp::Command
       end
 
       # Read each line as a path
-      File.new(inputs, "r").each_line do |line| 
+      File.new(inputs, "r").each_line do |line|
         # Handle each line as if it were an argument
         input.input(line.strip)
+      end
+    end
+
+    # If --exclude-file was specified, read it as a file and append to
+    # the exclude pattern list.
+    if !exclude_file.nil?
+      if !File.exists?(exclude_file)
+        logger.fatal("File given for --exclude-file does not exist (#{exclude_file})")
+        return 1
+      end
+
+      # Read each line as a path
+      File.new(exclude-file, "r").each_line do |line| 
+        # Handle each line as if it were an argument
+        # 'excludes' is defined above near the -x option.
+        excludes << line.strip
       end
     end
 
@@ -389,7 +414,7 @@ class FPM::Command < Clamp::Command
 
     input.attrs = h
 
-    
+
     script_errors = []
     setscript = proc do |scriptname|
       # 'self.send(scriptname) == self.before_install == --before-install
@@ -435,9 +460,9 @@ class FPM::Command < Clamp::Command
       end
     end
 
-    # Write the output somewhere, package can be nil if no --package is specified, 
+    # Write the output somewhere, package can be nil if no --package is specified,
     # and that's OK.
-    
+
     # If the package output (-p flag) is a directory, write to the default file name
     # but inside that directory.
     if ! package.nil? && File.directory?(package)
@@ -497,7 +522,7 @@ class FPM::Command < Clamp::Command
       if File.readable? rc_file
         logger.warn("Loading flags from rc file #{rc_file}")
         File.readlines(rc_file).each do |line|
-          # reverse becasue 'unshift' pushes onto the left side of the array.
+          # reverse because 'unshift' pushes onto the left side of the array.
           Shellwords.shellsplit(line).reverse.each do |arg|
             # Put '.fpm'-file flags *before* the command line flags
             # so that we the CLI can override the .fpm flags

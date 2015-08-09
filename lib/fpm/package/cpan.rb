@@ -27,6 +27,9 @@ class FPM::Package::CPAN < FPM::Package
   option "--perl-lib-path", "PERL_LIB_PATH",
     "Path of target Perl Libraries"
 
+  option "--sandbox-non-core", :flag,
+    "Sandbox all non-core modules, even if they're already installed", :default => true
+
   private
   def input(package)
     #if RUBY_VERSION =~ /^1\.8/
@@ -49,14 +52,14 @@ class FPM::Package::CPAN < FPM::Package
     end
 
     # Read package metadata (name, version, etc)
-    if File.exists?(File.join(moduledir, "META.json"))
+    if File.exist?(File.join(moduledir, "META.json"))
       metadata = JSON.parse(File.read(File.join(moduledir, ("META.json"))))
-    elsif File.exists?(File.join(moduledir, ("META.yml")))
+    elsif File.exist?(File.join(moduledir, ("META.yml")))
       require "yaml"
       metadata = YAML.load_file(File.join(moduledir, ("META.yml")))
-    elsif File.exists?(File.join(moduledir, "MYMETA.json"))
+    elsif File.exist?(File.join(moduledir, "MYMETA.json"))
       metadata = JSON.parse(File.read(File.join(moduledir, ("MYMETA.json"))))
-    elsif File.exists?(File.join(moduledir, ("MYMETA.yml")))
+    elsif File.exist?(File.join(moduledir, ("MYMETA.yml")))
       require "yaml"
       metadata = YAML.load_file(File.join(moduledir, ("MYMETA.yml")))
     else
@@ -100,8 +103,17 @@ class FPM::Package::CPAN < FPM::Package
     # We'll install to a temporary directory.
     logger.info("Installing any build or configure dependencies")
 
-    cpanm_flags = ["-L", build_path("cpan"), moduledir]
-    cpanm_flags += ["-n"] if attributes[:cpan_test?]
+    if attributes[:cpan_sandbox_non_core?]
+      cpanm_flags = ["-L", build_path("cpan"), moduledir]
+    else
+      cpanm_flags = ["-l", build_path("cpan"), moduledir]
+    end
+
+    # This flag causes cpanm to ONLY download dependencies, skipping the target
+    # module itself.  This is fine, because the target module has already been
+    # downloaded, and there's no need to download twice, test twice, etc.
+    cpanm_flags += ["--installdeps"]
+    cpanm_flags += ["-n"] if !attributes[:cpan_test?]
     cpanm_flags += ["--mirror", "#{attributes[:cpan_mirror]}"] if !attributes[:cpan_mirror].nil?
     cpanm_flags += ["--mirror-only"] if attributes[:cpan_mirror_only?] && !attributes[:cpan_mirror].nil?
 
@@ -157,7 +169,9 @@ class FPM::Package::CPAN < FPM::Package
       # Set up the local::lib environment
       export_local_lib_env(build_path("cpan"))
 
-      if File.exists?("Build.PL")
+      # Try Makefile.PL, Build.PL
+      #
+      if File.exist?("Build.PL")
         # Module::Build is in use here; different actions required.
         safesystem(attributes[:cpan_perl_bin], "Build.PL")
         safesystem(attributes[:cpan_perl_bin], "./Build")
@@ -173,7 +187,7 @@ class FPM::Package::CPAN < FPM::Package
            safesystem("./Build", "install",
                      "--prefix", prefix, "--destdir", staging_path)
         end
-      elsif File.exists?("Makefile.PL")
+      elsif File.exist?("Makefile.PL")
         if attributes[:cpan_perl_lib_path]
           perl_lib_path = attributes[:cpan_perl_lib_path]
           safesystem(attributes[:cpan_perl_bin],
