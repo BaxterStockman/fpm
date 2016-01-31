@@ -253,24 +253,27 @@ class FPM::Package::CPAN < FPM::Package
     end
   end
 
+  # Set up ENV with values from Perl's local::lib module.  Opens a subprocess
+  # to the configured Perl executable, printing all values from Perl's %ENV
+  # hash as "key=value" strings.  Then reads from the subprocess' output,
+  # inserting into ENV any new key-value pairs, in this way injecting the
+  # local::lib values into the current environment.
   def export_local_lib_env(local_lib_path)
-    # Iterate over the output of local::lib line by line
-    `#{attributes[:cpan_perl_bin]} -Mlocal::lib=#{local_lib_path}`.lines.each do |line|
-      # local::lib's output is in the form:
-      # 'ENV_VAR="some value"; export $ENV_VAR;'
-      # This regular expression strips everything from the semicolon in front
-      # of 'export' to the end of the line, then splits on the equals sign,
-      # limiting the returned array to two elements.
-      (k, v) = line.chomp.gsub(/;\s+export.*$/, "").split("=", 2)
+    perl_env_out = safesystemout(
+      attributes[:cpan_perl_bin],
+      "-Mlocal::lib=#{local_lib_path}",
+      "-le",
+      'while (my ($k, $v) = each %ENV) { print "${k}=${v}" }'
+    )
 
-      # Skip these, since they wreak havoc when PREFIX # is set.
-      next if k == "PERL_MM_OPT" or k == "PERL_MB_OPT"
+    perl_env_out.each_line do |line|
+      k, v = line.chomp.split("=", 2)
 
-      # Set the current environment in accordance with local::lib's output.
-      # The subshell call to echo is necessary because some environment
-      # variables are defined in terms of other such variables; this technique
-      # expands the variables-within-variables.
-      ENV[k] = `echo #{v}`.chomp
+      # PERL_MM_OPT and PERL_MB_OPT are incompatible with setting PREFIX, which
+      # is done during the build process.
+      next if [nil, "PERL_MM_OPT", "PERL_MB_OPT"].include?(k)
+
+      ENV[k] = v
     end
   end
 
